@@ -79,7 +79,7 @@ def procesar_dataset_fantasy(input_file, output_file):
 
 # --- EJECUCIÓN ---
 if __name__ == "__main__":
-    ARCHIVO_ENTRADA = "dataset_stats_jugadores_20260204.csv" # Tu archivo original
-    ARCHIVO_SALIDA = "dataset_entrenamiento_FINAL_IA.csv"
+    ARCHIVO_ENTRADA = "dataset_stats_jugadores_20260209.csv" # Tu archivo original
+    ARCHIVO_SALIDA = "dataset_entrenamiento_FINAL.csv"
     
     procesar_dataset_fantasy(ARCHIVO_ENTRADA, ARCHIVO_SALIDA)
