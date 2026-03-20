@@ -27,7 +27,7 @@ from sklearn.preprocessing import LabelEncoder
 # ─────────────────────────────────────────────
 # CONFIGURACIÓN
 # ─────────────────────────────────────────────
-DATASET_PATH = "DATASET_MAESTRO_TFG.csv"
+DATASET_PATH = "data/raw/DATASET_MAESTRO_TFG.csv"
 OUTPUT_DIR   = "resultados_modelo"
 HORIZONTES   = [1, 3, 7]   # días a predecir
 
