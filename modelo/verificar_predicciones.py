@@ -20,11 +20,11 @@ OUTPUT_DIR         = "resultados_modelo"
 # ─────────────────────────────────────────────
 # 1. CARGAR DATOS
 # ─────────────────────────────────────────────
-print("📂 Cargando predicciones del 8 de febrero...")
+print(" Cargando predicciones del 8 de febrero...")
 df_pred = pd.read_csv(PREDICCIONES_PATH)
 print(f"   Jugadores con predicción: {len(df_pred)}")
 
-print("\n📂 Cargando mercado real del 9 de febrero...")
+print("\n Cargando mercado real del 9 de febrero...")
 df_real = pd.read_csv(MERCADO_REAL_PATH)
 df_real = df_real.rename(columns={
     'name': 'player_name',
@@ -36,7 +36,7 @@ print(f"   Jugadores en mercado real: {len(df_real)}")
 # ─────────────────────────────────────────────
 # 2. CRUZAR POR NOMBRE
 # ─────────────────────────────────────────────
-print("\n🔄 Cruzando por nombre...")
+print("\n Cruzando por nombre...")
 df = df_pred.merge(
     df_real[['player_name', 'mv_real_9feb', 'var_real_api']],
     on='player_name',
@@ -76,7 +76,7 @@ total    = len(df)
 pct_dir  = aciertos / total * 100
 
 print(f"\n{'='*50}")
-print(f"📊 RESULTADOS DE VERIFICACIÓN (8 Feb → 9 Feb)")
+print(f" RESULTADOS DE VERIFICACIÓN (8 Feb → 9 Feb)")
 print(f"{'='*50}")
 print(f"   Jugadores analizados:     {total}")
 print(f"   MAE:                      {mae:,.0f} €")
@@ -91,16 +91,16 @@ cols = ['player_name', 'marketValue', 'pred_var_1d', 'var_real',
         'pred_mv_mañana', 'mv_real_9feb', 'error_abs', 'error_pct',
         'acierto_direccion']
 
-print(f"\n✅ TOP 15 MEJORES PREDICCIONES (menor error %):")
+print(f"\n TOP 15 MEJORES PREDICCIONES (menor error %):")
 print(df.nsmallest(15, 'error_pct')[cols].to_string(index=False))
 
-print(f"\n❌ TOP 15 PEORES PREDICCIONES (mayor error %):")
+print(f"\n TOP 15 PEORES PREDICCIONES (mayor error %):")
 print(df.nlargest(15, 'error_pct')[cols].to_string(index=False))
 
-print(f"\n📈 SUBIDAS PREDICHAS QUE REALMENTE SUBIERON:")
+print(f"\n SUBIDAS PREDICHAS QUE REALMENTE SUBIERON:")
 print(df[df['pred_sube'] & df['real_sube']][cols].head(10).to_string(index=False))
 
-print(f"\n📉 BAJADAS PREDICHAS QUE REALMENTE BAJARON:")
+print(f"\n BAJADAS PREDICHAS QUE REALMENTE BAJARON:")
 print(df[~df['pred_sube'] & ~df['real_sube']][cols].head(10).to_string(index=False))
 
 # ─────────────────────────────────────────────
@@ -152,12 +152,12 @@ plt.tight_layout()
 ruta = os.path.join(OUTPUT_DIR, 'verificacion_9feb.png')
 plt.savefig(ruta, dpi=150, bbox_inches='tight')
 plt.close()
-print(f"\n💾 Gráfico guardado: {ruta}")
+print(f"\n Gráfico guardado: {ruta}")
 
 # ─────────────────────────────────────────────
 # 7. GUARDAR CSV
 # ─────────────────────────────────────────────
 ruta_csv = os.path.join(OUTPUT_DIR, 'verificacion_completa.csv')
 df.to_csv(ruta_csv, index=False)
-print(f"💾 Verificación completa guardada: {ruta_csv}")
-print(f"\n✅ ¡Verificación completada!")
+print(f" Verificación completa guardada: {ruta_csv}")
+print(f"\n ¡Verificación completada!")

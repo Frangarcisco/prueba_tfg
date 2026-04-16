@@ -38,7 +38,7 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 # 1. CARGA Y LIMPIEZA
 # ─────────────────────────────────────────────
 def cargar_datos(path):
-    print("📂 Cargando dataset...")
+    print(" Cargando dataset...")
     df = pd.read_csv(path)
     df['date'] = pd.to_datetime(df['date'], utc=True).dt.tz_localize(None)
     df = df.sort_values(['player_id', 'date']).reset_index(drop=True)
@@ -47,6 +47,7 @@ def cargar_datos(path):
     df.drop(columns=['bids'], inplace=True, errors='ignore')
 
     # Rellenar nulos de equipo/nombre con forward fill por jugador
+    # Esto es para rellnar valores faltantes usando información del mismo jugador en días cercanos
     df['equipo']  = df.groupby('player_id')['equipo'].ffill().bfill()
     df['nombre']  = df.groupby('player_id')['nombre'].ffill().bfill()
     df['posicion'] = df.groupby('player_id')['posicion'].ffill().bfill()
@@ -55,7 +56,7 @@ def cargar_datos(path):
     cols_num = df.select_dtypes(include=[np.number]).columns
     df[cols_num] = df[cols_num].fillna(0)
 
-    print(f"✅ Dataset cargado: {df.shape[0]} filas, {df.shape[1]} columnas")
+    print(f" Dataset cargado: {df.shape[0]} filas, {df.shape[1]} columnas")
     print(f"   Jugadores: {df['player_id'].nunique()}")
     print(f"   Rango fechas: {df['date'].min().date()} → {df['date'].max().date()}")
     return df
@@ -64,8 +65,10 @@ def cargar_datos(path):
 # ─────────────────────────────────────────────
 # 2. FEATURE ENGINEERING
 # ─────────────────────────────────────────────
+
+# Creo nuevas variables a partir de los datos originales para que el modelo pueda detectar patrones y hacer mejores predicciones.
 def crear_features(df):
-    print("\n⚙️  Creando features...")
+    print("\n  Creando features...")
 
     df = df.sort_values(['player_id', 'date']).copy()
 
@@ -89,6 +92,7 @@ def crear_features(df):
         df[f'mv_pct_past_{lag}d'] = (df[f'mv_var_past_{lag}d'] / df.groupby('player_id')['marketValue'].shift(lag) * 100).round(4)
 
     # --- MEDIAS MÓVILES de puntos ---
+    # Para suavizar el ruido
     for ventana in [3, 7, 14]:
         df[f'puntos_ma_{ventana}d'] = (
             df.groupby('player_id')['puntos_totales']
@@ -111,16 +115,20 @@ def crear_features(df):
     df['posicion']   = df['posicion'].astype(int)
 
     # --- RATIO marketValue vs media de posición ---
+    # Comparo el valor del jugador con la media de su posición para contextualizarlo
     media_mv_pos = df.groupby(['date', 'posicion'])['marketValue'].transform('mean')
     df['ratio_mv_vs_posicion'] = df['marketValue'] / (media_mv_pos + 1)
 
-    print(f"✅ Features creadas. Shape: {df.shape}")
+    print(f" Features creadas. Shape: {df.shape}")
     return df
 
 
 # ─────────────────────────────────────────────
 # 3. DEFINIR FEATURES DE ENTRADA
 # ─────────────────────────────────────────────
+
+# la lista de columnas que el modelo va a usar como entrada
+
 FEATURES = [
     # Valor actual y lags
     'marketValue',
@@ -155,7 +163,7 @@ FEATURES = [
 # ─────────────────────────────────────────────
 def entrenar_modelo(df, horizonte):
     print(f"\n{'='*50}")
-    print(f"🚀 Entrenando modelo para horizonte: {horizonte} día(s)")
+    print(f" Entrenando modelo para horizonte: {horizonte} día(s)")
     print(f"{'='*50}")
 
     target = f'target_{horizonte}d'
@@ -166,7 +174,10 @@ def entrenar_modelo(df, horizonte):
 
     print(f"   Filas para entrenamiento: {len(df_modelo)}")
 
+    #X lo que el modelo ve
     X = df_modelo[features_disponibles]
+
+    # Y lo que tiene que aprender
     y = df_modelo[target]
     fechas = df_modelo['date']
 
@@ -182,6 +193,7 @@ def entrenar_modelo(df, horizonte):
     print(f"   Test:  {len(X_test)} filas")
 
     # --- MODELO XGBoost ---
+    # Modelo de boosting basado en árboles de decisión
     modelo = xgb.XGBRegressor(
         n_estimators=500,
         learning_rate=0.05,
@@ -197,6 +209,7 @@ def entrenar_modelo(df, horizonte):
         eval_metric='mae',
     )
 
+    # Entrenamiento
     modelo.fit(
         X_train, y_train,
         eval_set=[(X_test, y_test)],
@@ -204,17 +217,21 @@ def entrenar_modelo(df, horizonte):
     )
 
     # --- MÉTRICAS ---
+    # Métricas estándar de regresión
     y_pred = modelo.predict(X_test)
 
+    # MAE para medir el error medio
     mae  = mean_absolute_error(y_test, y_pred)
+    # RMSE para penalizar errores grandes
     rmse = np.sqrt(mean_squared_error(y_test, y_pred))
+    # R² para evaluar la capacidad explicativa del modelo
     r2   = r2_score(y_test, y_pred)
 
     # MAE en porcentaje (más interpretable)
     mv_test = df_modelo.loc[test_mask, 'marketValue']
     mae_pct = (np.abs(y_test.values - y_pred) / mv_test.values * 100).mean()
 
-    print(f"\n📊 RESULTADOS ({horizonte}d):")
+    print(f"\n RESULTADOS ({horizonte}d):")
     print(f"   MAE:      {mae:,.0f} € ({mae_pct:.2f}% del valor)")
     print(f"   RMSE:     {rmse:,.0f} €")
     print(f"   R²:       {r2:.4f}")
@@ -225,7 +242,7 @@ def entrenar_modelo(df, horizonte):
         'importancia': modelo.feature_importances_
     }).sort_values('importancia', ascending=False)
 
-    print(f"\n🔍 Top 10 features más importantes:")
+    print(f"\n Top 10 features más importantes:")
     print(importancia.head(10).to_string(index=False))
 
     # --- GUARDAR RESULTADOS ---
@@ -287,7 +304,7 @@ def guardar_graficos(y_test, y_pred, importancia, horizonte, mae, mae_pct, r2):
     ruta = os.path.join(OUTPUT_DIR, f'resultados_{horizonte}d.png')
     plt.savefig(ruta, dpi=150, bbox_inches='tight')
     plt.close()
-    print(f"   💾 Gráfico guardado: {ruta}")
+    print(f"    Gráfico guardado: {ruta}")
 
 
 # ─────────────────────────────────────────────
@@ -296,7 +313,7 @@ def guardar_graficos(y_test, y_pred, importancia, horizonte, mae, mae_pct, r2):
 def predecir_jugadores(df, resultados, top_n=20):
     """Genera una tabla con predicciones para los últimos datos disponibles."""
     print(f"\n{'='*50}")
-    print("🔮 PREDICCIONES PARA MAÑANA (último día disponible)")
+    print(" PREDICCIONES PARA MAÑANA (último día disponible)")
     print(f"{'='*50}")
 
     ultimo_dia = df['date'].max()
@@ -323,16 +340,16 @@ def predecir_jugadores(df, resultados, top_n=20):
                      'pred_var_1d', 'pred_pct_1d', 'pred_mv_mañana']].copy()
     tabla = tabla.sort_values('pred_var_1d', ascending=False)
 
-    print(f"\n📈 TOP {top_n} SUBIDAS PREDICHAS:")
+    print(f"\n TOP {top_n} SUBIDAS PREDICHAS:")
     print(tabla.head(top_n).to_string(index=False))
 
-    print(f"\n📉 TOP {top_n} BAJADAS PREDICHAS:")
+    print(f"\n TOP {top_n} BAJADAS PREDICHAS:")
     print(tabla.tail(top_n).to_string(index=False))
 
     # Guardar CSV
     ruta_csv = os.path.join(OUTPUT_DIR, 'predicciones_mañana.csv')
     tabla.to_csv(ruta_csv, index=False)
-    print(f"\n💾 Predicciones guardadas: {ruta_csv}")
+    print(f"\n Predicciones guardadas: {ruta_csv}")
 
     return tabla
 
@@ -342,7 +359,7 @@ def predecir_jugadores(df, resultados, top_n=20):
 # ─────────────────────────────────────────────
 def resumen_final(resultados):
     print(f"\n{'='*50}")
-    print("📋 RESUMEN COMPARATIVO DE MODELOS")
+    print(" RESUMEN COMPARATIVO DE MODELOS")
     print(f"{'='*50}")
 
     filas = []
@@ -362,7 +379,7 @@ def resumen_final(resultados):
 
     ruta = os.path.join(OUTPUT_DIR, 'resumen_modelos.csv')
     resumen.to_csv(ruta, index=False)
-    print(f"\n💾 Resumen guardado: {ruta}")
+    print(f"\n Resumen guardado: {ruta}")
 
 
 # ─────────────────────────────────────────────
@@ -391,4 +408,4 @@ if __name__ == "__main__":
     # 5. Resumen
     resumen_final(resultados)
 
-    print(f"\n✅ ¡Todo listo! Resultados en la carpeta: {OUTPUT_DIR}/")
+    print(f"\n ¡Todo listo! Resultados en la carpeta: {OUTPUT_DIR}/")
