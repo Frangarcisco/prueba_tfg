@@ -193,6 +193,7 @@ def entrenar_modelo(df, horizonte):
     print(f"   Test:  {len(X_test)} filas")
 
     # --- MODELO XGBoost ---
+    #LightGBM
     # Modelo de boosting basado en árboles de decisión
     modelo = xgb.XGBRegressor(
         n_estimators=500,
