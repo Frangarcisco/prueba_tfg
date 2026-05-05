@@ -161,7 +161,14 @@ FEATURES = [
 # ─────────────────────────────────────────────
 # 4. ENTRENAMIENTO Y EVALUACIÓN
 # ─────────────────────────────────────────────
-def entrenar_modelo(df, horizonte):
+def entrenar_modelo(
+    df,
+    horizonte,
+    train_mask=None,
+    test_mask=None,
+    fecha_inicio=None,
+    fecha_fin=None
+):
     print(f"\n{'='*50}")
     print(f" Entrenando modelo para horizonte: {horizonte} día(s)")
     print(f"{'='*50}")
@@ -174,27 +181,60 @@ def entrenar_modelo(df, horizonte):
 
     print(f"   Filas para entrenamiento: {len(df_modelo)}")
 
-    #X lo que el modelo ve
     X = df_modelo[features_disponibles]
-
-    # Y lo que tiene que aprender
     y = df_modelo[target]
     fechas = df_modelo['date']
 
-    # --- SPLIT TEMPORAL: últimos 30 días como test ---
-    fecha_corte = fechas.max() - pd.Timedelta(days=30)
-    train_mask = fechas <= fecha_corte
-    test_mask  = fechas > fecha_corte
+    # =========================
+    # PRIORIDAD DE SPLITS
+    # =========================
 
-    X_train, X_test = X[train_mask], X[test_mask]
-    y_train, y_test = y[train_mask], y[test_mask]
+    # 1. Split manual (máxima prioridad)
+    if train_mask is not None and test_mask is not None:
+        train_mask = train_mask.reindex(df_modelo.index, fill_value=False)
+        test_mask  = test_mask.reindex(df_modelo.index, fill_value=False)
 
-    print(f"   Train: {len(X_train)} filas hasta {fecha_corte.date()}")
-    print(f"   Test:  {len(X_test)} filas")
+        print(f"   Train: {train_mask.sum()} filas")
+        print(f"   Test:  {test_mask.sum()} filas")
 
-    # --- MODELO XGBoost ---
-    #LightGBM
-    # Modelo de boosting basado en árboles de decisión
+    # 2. Split por fechas personalizadas (LO QUE QUIERES)
+    elif fecha_inicio is not None and fecha_fin is not None:
+        fecha_inicio = pd.to_datetime(fecha_inicio)
+        fecha_fin    = pd.to_datetime(fecha_fin)
+
+        test_mask  = (fechas >= fecha_inicio) & (fechas <= fecha_fin)
+        train_mask = fechas < fecha_inicio
+
+        print(f"   Train: {train_mask.sum()} filas hasta {fecha_inicio.date()}")
+        print(f"   Test:  {test_mask.sum()} filas ({fecha_inicio.date()} → {fecha_fin.date()})")
+
+    # 3. Split automático (fallback)
+    else:
+        fecha_corte = fechas.max() - pd.Timedelta(days=30)
+
+        train_mask = fechas <= fecha_corte
+        test_mask  = fechas > fecha_corte
+
+        print(f"   Train: {len(X[train_mask])} filas hasta {fecha_corte.date()}")
+        print(f"   Test:  {len(X[test_mask])} filas")
+
+    # =========================
+    # SPLIT FINAL
+    # =========================
+
+    X_train = X[train_mask]
+    X_test  = X[test_mask]
+    y_train = y[train_mask]
+    y_test  = y[test_mask]
+
+    # ⚠️ CHECK CLAVE (te evita bugs silenciosos)
+    if len(X_test) == 0:
+        raise ValueError("El test está vacío. Revisa el rango de fechas.")
+
+    # =========================
+    # MODELO
+    # =========================
+
     modelo = xgb.XGBRegressor(
         n_estimators=500,
         learning_rate=0.05,
@@ -210,25 +250,22 @@ def entrenar_modelo(df, horizonte):
         eval_metric='mae',
     )
 
-    # Entrenamiento
     modelo.fit(
         X_train, y_train,
         eval_set=[(X_test, y_test)],
         verbose=False,
     )
 
-    # --- MÉTRICAS ---
-    # Métricas estándar de regresión
+    # =========================
+    # MÉTRICAS
+    # =========================
+
     y_pred = modelo.predict(X_test)
 
-    # MAE para medir el error medio
     mae  = mean_absolute_error(y_test, y_pred)
-    # RMSE para penalizar errores grandes
     rmse = np.sqrt(mean_squared_error(y_test, y_pred))
-    # R² para evaluar la capacidad explicativa del modelo
     r2   = r2_score(y_test, y_pred)
 
-    # MAE en porcentaje (más interpretable)
     mv_test = df_modelo.loc[test_mask, 'marketValue']
     mae_pct = (np.abs(y_test.values - y_pred) / mv_test.values * 100).mean()
 
@@ -237,7 +274,6 @@ def entrenar_modelo(df, horizonte):
     print(f"   RMSE:     {rmse:,.0f} €")
     print(f"   R²:       {r2:.4f}")
 
-    # --- IMPORTANCIA DE FEATURES ---
     importancia = pd.DataFrame({
         'feature': features_disponibles,
         'importancia': modelo.feature_importances_
@@ -246,7 +282,6 @@ def entrenar_modelo(df, horizonte):
     print(f"\n Top 10 features más importantes:")
     print(importancia.head(10).to_string(index=False))
 
-    # --- GUARDAR RESULTADOS ---
     guardar_graficos(y_test, y_pred, importancia, horizonte, mae, mae_pct, r2)
 
     return modelo, {
@@ -263,7 +298,6 @@ def entrenar_modelo(df, horizonte):
         'df_test': df_modelo[test_mask].copy(),
         'y_pred': y_pred,
     }
-
 
 # ─────────────────────────────────────────────
 # 5. GRÁFICOS

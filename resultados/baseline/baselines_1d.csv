@@ -1,0 +1,4 @@
+baseline,mae,mae_pct,descripcion
+zero,107273.07704494777,0.7842747416674206,Predice variación = 0 siempre
+naive_lag1,28863.401948128154,0.26692831172812215,Predice la variación del día anterior
+ma7,68530.82307576241,0.4727653880814367,Media móvil de variación (7 días)
