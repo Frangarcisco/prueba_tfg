@@ -7,10 +7,10 @@ from modelo_tfg import cargar_datos, crear_features, entrenar_modelo
 # ─────────────────────────────────────────────
 # 🔧 CONFIGURACIÓN (TOCA SOLO ESTO)
 # ─────────────────────────────────────────────
-PLAYER_NAME = "Mbappé"     # ← CAMBIA AQUÍ EL JUGADOR
+PLAYER_NAME = "Fermín"     # ← CAMBIA AQUÍ EL JUGADOR
 FECHA_INICIO = "2025-10-01"  # ← CAMBIA AQUÍ
-FECHA_FIN    = "2026-01-20"  # ← CAMBIA AQUÍ
-HORIZONTE = 1                # 1, 3 o 7 días
+FECHA_FIN    = "2025-12-20"  # ← CAMBIA AQUÍ
+HORIZONTE = 7                # 1, 3 o 7 días
 
 # ─────────────────────────────────────────────
 # CARGA Y MODELO
