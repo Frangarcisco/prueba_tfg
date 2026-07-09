@@ -17,32 +17,12 @@ import xgboost as xgb
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__)))
-from modelo_tfg import crear_features, FEATURES, HORIZONTES
+from modelo_tfg import crear_features, FEATURES, HORIZONTES, calcular_splits_temporales, limpiar_X
 
 BASE_DIR     = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATASET_PATH = os.path.join(BASE_DIR, "data", "raw", "DATASET_MAESTRO_TFG_corregido.csv")
 OUTPUT_DIR   = os.path.join(BASE_DIR, "modelos_guardados")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
-
-
-def limpiar_X(df_x):
-    """
-    Convierte todas las columnas a float64 de forma robusta.
-    Resuelve object, bool, UInt32 y cualquier tipo que XGBoost no acepte.
-    """
-    resultado = pd.DataFrame(index=df_x.index)
-    for col in df_x.columns:
-        serie = df_x[col]
-        # Si la columna contiene objetos compuestos (DataFrames anidados, etc.)
-        # los aplana a escalar primero
-        if hasattr(serie, 'values') and hasattr(serie.values, 'dtype'):
-            try:
-                resultado[col] = pd.to_numeric(serie, errors='coerce').fillna(0).astype('float64')
-            except Exception:
-                resultado[col] = 0.0
-        else:
-            resultado[col] = 0.0
-    return resultado
 
 
 def cargar_datos_app(path):
@@ -79,18 +59,18 @@ def entrenar_y_guardar(df, horizonte):
     y      = df_modelo[target]
     fechas = df_modelo["date"]
 
-    fecha_corte = fechas.max() - pd.Timedelta(days=30)
-    train_mask  = fechas <= fecha_corte
-    test_mask   = fechas >  fecha_corte
+    s = calcular_splits_temporales(fechas, horizonte, dias_test=30, val_fraction=0.10)
+    train_mask, val_mask, test_mask = s['train_mask'], s['val_mask'], s['test_mask']
+    fc = s['fechas_corte']
 
-    # Limpiar tipos antes de pasar a XGBoost
     X_train = limpiar_X(X[train_mask])
+    X_val   = limpiar_X(X[val_mask])
     X_test  = limpiar_X(X[test_mask])
-    y_train = y[train_mask]
-    y_test  = y[test_mask]
+    y_train, y_val, y_test = y[train_mask], y[val_mask], y[test_mask]
 
-    print(f"  Train: {len(X_train):,} filas hasta {fecha_corte.date()}")
-    print(f"  Test:  {len(X_test):,} filas")
+    print(f"  Train: {len(X_train):,} filas hasta {fc['fin_train'].date()}")
+    print(f"  Val:   {len(X_val):,} filas ({fc['inicio_val'].date()} → {fc['fin_val'].date()})")
+    print(f"  Test:  {len(X_test):,} filas desde {fc['inicio_test'].date()}")
 
     if len(X_test) == 0:
         raise ValueError(f"Test vacio para horizonte {horizonte}d.")
@@ -112,7 +92,7 @@ def entrenar_y_guardar(df, horizonte):
 
     modelo.fit(
         X_train, y_train,
-        eval_set=[(X_test, y_test)],
+        eval_set=[(X_val, y_val)],
         verbose=False,
     )
 
@@ -132,7 +112,7 @@ def entrenar_y_guardar(df, horizonte):
         "features":    features_disponibles,
         "horizonte":   horizonte,
         "metricas":    {"mae": mae, "rmse": rmse, "r2": r2},
-        "fecha_corte": fecha_corte,
+        "fecha_corte": fc,
     }, ruta)
     print(f"  Guardado en: {ruta}")
 

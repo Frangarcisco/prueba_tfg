@@ -1,0 +1,4 @@
+baseline,mae,mae_pct,n,descripcion
+zero,691551.8289488604,4.925584576400389,17638,Predice variación = 0 siempre
+naive_lag7,531681.2054087765,3.250711128425705,17638,Predice que la variación a 7 día(s) será igual a la variación observada en los 7 día(s) anteriores
+ma7,580293.8019049779,3.560657608691676,17638,Extrapola la media móvil de variación diaria (7 días) a 7 día(s)

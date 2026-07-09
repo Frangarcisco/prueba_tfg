@@ -27,7 +27,7 @@ from sklearn.preprocessing import LabelEncoder
 # ─────────────────────────────────────────────
 # CONFIGURACIÓN
 # ─────────────────────────────────────────────
-DATASET_PATH = "data/raw/DATASET_MAESTRO_TFG.csv"
+DATASET_PATH = "data/raw/DATASET_MAESTRO_TFG_corregido.csv"
 OUTPUT_DIR   = "resultados_modelo"
 HORIZONTES   = [1, 3, 7]   # días a predecir
 
@@ -40,7 +40,8 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 def cargar_datos(path):
     print(" Cargando dataset...")
     df = pd.read_csv(path)
-    df['date'] = pd.to_datetime(df['date'], utc=True).dt.tz_localize(None)
+    df["date"] = pd.to_datetime(df["date"], dayfirst=True, errors="coerce").dt.normalize()
+    df = df.dropna(subset=['date'])
     df = df.sort_values(['player_id', 'date']).reset_index(drop=True)
 
     # Eliminar columna bids (toda a 0, no aporta)
@@ -157,10 +158,129 @@ FEATURES = [
     'posicion', 'equipo_enc', 'ratio_mv_vs_posicion',
 ]
 
+# ─────────────────────────────────────────────
+# ETIQUETAS LEGIBLES PARA LAS GRÁFICAS
+# ─────────────────────────────────────────────
+ETIQUETAS_FEATURES = {
+    'marketValue': 'Valor de mercado actual',
+    'mv_lag_1d': 'Precio hace 1 día',
+    'mv_lag_2d': 'Precio hace 2 días',
+    'mv_lag_3d': 'Precio hace 3 días',
+    'mv_lag_7d': 'Precio hace 7 días',
+    'mv_lag_14d': 'Precio hace 14 días',
+    'mv_var_past_1d': 'Variación día -1',
+    'mv_var_past_3d': 'Variación 3 días atrás',
+    'mv_var_past_7d': 'Variación 7 días atrás',
+    'mv_pct_past_1d': 'Variación % día -1',
+    'mv_pct_past_3d': 'Variación % 3 días atrás',
+    'mv_pct_past_7d': 'Variación % 7 días atrás',
+    'mv_ma_3d': 'Media móvil precio 3 días',
+    'mv_ma_7d': 'Media móvil precio 7 días',
+    'mv_ma_14d': 'Media móvil precio 14 días',
+    'puntos_totales': 'Puntos acumulados temporada',
+    'marca_points': 'Puntuación DAZN (jornada)',
+    'mins_played': 'Minutos jugados',
+    'goals': 'Goles (jornada)',
+    'goal_assist': 'Asistencias',
+    'saves': 'Paradas',
+    'effective_clearance': 'Despejes efectivos',
+    'yellow_card': 'Tarjetas amarillas',
+    'red_card': 'Tarjetas rojas',
+    'own_goals': 'Goles en propia meta',
+    'goals_conceded': 'Goles encajados',
+    'total_scoring_att': 'Intentos de gol',
+    'won_contest': 'Duelos ganados',
+    'ball_recovery': 'Recuperaciones de balón',
+    'poss_lost_all': 'Pérdidas de posesión',
+    'puntos_acumulados': 'Puntos acumulados',
+    'partidos_jugados': 'Partidos jugados',
+    'media_puntos_hasta_fecha': 'Media de puntos (temporada)',
+    'goles_acumulados': 'Goles acumulados',
+    'ranking_posicion_jornada': 'Ranking en su posición',
+    'puntos_ma_3d': 'Media móvil puntos 3 días',
+    'puntos_ma_7d': 'Media móvil puntos 7 días',
+    'puntos_ma_14d': 'Media móvil puntos 14 días',
+    'dias_prox_partido': 'Días al próximo partido',
+    'is_paron_selecciones': 'Parón de selecciones',
+    'dias_desde_inicio': 'Días desde inicio de temporada',
+    'jornada': 'Número de jornada',
+    'dia_semana': 'Día de la semana',
+    'dia_mes': 'Día del mes',
+    'mes': 'Mes del año',
+    'semana_año': 'Semana del año',
+    'posicion': 'Posición del jugador',
+    'equipo_enc': 'Equipo',
+    'ratio_mv_vs_posicion': 'Ratio valor vs. posición',
+}
+
 
 # ─────────────────────────────────────────────
 # 4. ENTRENAMIENTO Y EVALUACIÓN
 # ─────────────────────────────────────────────
+def calcular_splits_temporales(fechas, horizonte, dias_test=30, val_fraction=0.10):
+    """
+    Calcula las fechas de corte para train / validación / test dejando un
+    margen (gap) de `horizonte` días en cada frontera. El motivo es que el
+    target de un ejemplo (shift(-horizonte)) lee el marketValue `horizonte`
+    días por delante de la fecha de la fila; sin este margen, una fila
+    cercana al límite de un bloque leería información que pertenece al
+    bloque siguiente.
+
+    - Test: últimos `dias_test` días del dataset (idéntico al split
+      original, para no romper la comparabilidad con las tablas ya
+      descritas en la memoria).
+    - Validación: usada solo para early stopping, nunca para reportar
+      métricas. Su tamaño es una proporción (`val_fraction`) del
+      histórico disponible antes del gap de test.
+    - Train: el resto, con el mismo gap antes de validación.
+    """
+    fecha_max = fechas.max()
+    fecha_min = fechas.min()
+
+    fecha_corte_test = fecha_max - pd.Timedelta(days=dias_test)
+    test_mask = fechas > fecha_corte_test
+
+    fecha_fin_val = fecha_corte_test - pd.Timedelta(days=horizonte)
+    dias_historicos = (fecha_fin_val - fecha_min).days
+    dias_val = max(1, round(dias_historicos * val_fraction))
+    fecha_inicio_val = fecha_fin_val - pd.Timedelta(days=dias_val - 1)
+
+    fecha_fin_train = fecha_inicio_val - pd.Timedelta(days=horizonte + 1)
+    train_mask = fechas <= fecha_fin_train
+    val_mask   = (fechas >= fecha_inicio_val) & (fechas <= fecha_fin_val)
+
+    if fecha_fin_train < fecha_min:
+        raise ValueError(
+            f"Histórico insuficiente para horizonte={horizonte}d con "
+            f"val_fraction={val_fraction}: el train quedaría vacío o "
+            f"empezaría antes del inicio del dataset."
+        )
+
+    return {
+        'train_mask': train_mask, 'val_mask': val_mask, 'test_mask': test_mask,
+        'fechas_corte': {
+            'fin_train':   fecha_fin_train,
+            'inicio_val':  fecha_inicio_val,
+            'fin_val':     fecha_fin_val,
+            'inicio_test': fecha_corte_test + pd.Timedelta(days=1),
+        }
+    }
+
+def limpiar_X(df_x):
+    """
+    Convierte todas las columnas de X a float64, incluyendo columnas que
+    tras la carga desde CSV hayan quedado con dtype 'object' o 'bool'
+    (p. ej. is_paron_selecciones, media_puntos_hasta_fecha). Necesario
+    porque XGBoost solo admite int, float, bool o category como dtype.
+    """
+    resultado = df_x.copy()
+    for col in resultado.columns:
+        if resultado[col].dtype == object or resultado[col].dtype == bool:
+            resultado[col] = pd.to_numeric(resultado[col], errors='coerce').fillna(0).astype('float64')
+        else:
+            resultado[col] = resultado[col].astype('float64')
+    return resultado
+
 def entrenar_modelo(
     df,
     horizonte,
@@ -210,13 +330,12 @@ def entrenar_modelo(
 
     # 3. Split automático (fallback)
     else:
-        fecha_corte = fechas.max() - pd.Timedelta(days=30)
-
-        train_mask = fechas <= fecha_corte
-        test_mask  = fechas > fecha_corte
-
-        print(f"   Train: {len(X[train_mask])} filas hasta {fecha_corte.date()}")
-        print(f"   Test:  {len(X[test_mask])} filas")
+        s = calcular_splits_temporales(fechas, horizonte, dias_test=30, val_fraction=0.10)
+        train_mask, val_mask, test_mask = s['train_mask'], s['val_mask'], s['test_mask']
+        fc = s['fechas_corte']
+        print(f"   Train: {train_mask.sum()} filas hasta {fc['fin_train'].date()}")
+        print(f"   Val:   {val_mask.sum()} filas ({fc['inicio_val'].date()} → {fc['fin_val'].date()})")
+        print(f"   Test:  {test_mask.sum()} filas desde {fc['inicio_test'].date()}")
 
     # =========================
     # SPLIT FINAL
@@ -226,6 +345,12 @@ def entrenar_modelo(
     X_test  = X[test_mask]
     y_train = y[train_mask]
     y_test  = y[test_mask]
+    X_val = X[val_mask] if val_mask is not None else X_test
+    y_val = y[val_mask] if val_mask is not None else y_test
+    X_train = limpiar_X(X_train)
+    X_test  = limpiar_X(X_test)
+    if val_mask is not None:
+        X_val = limpiar_X(X_val)
 
     # ⚠️ CHECK CLAVE (te evita bugs silenciosos)
     if len(X_test) == 0:
@@ -252,7 +377,7 @@ def entrenar_modelo(
 
     modelo.fit(
         X_train, y_train,
-        eval_set=[(X_test, y_test)],
+        eval_set=[(X_val, y_val)],
         verbose=False,
     )
 
@@ -330,10 +455,12 @@ def guardar_graficos(y_test, y_pred, importancia, horizonte, mae, mae_pct, r2):
 
     # 3. Top 15 features
     ax = axes[2]
-    top15 = importancia.head(15)
-    ax.barh(top15['feature'][::-1], top15['importancia'][::-1], color='steelblue')
+    top15 = importancia.head(15).copy()
+    top15['label'] = top15['feature'].map(ETIQUETAS_FEATURES).fillna(top15['feature'])
+    ax.barh(top15['label'][::-1], top15['importancia'][::-1], color='steelblue')
     ax.set_xlabel('Importancia')
-    ax.set_title('Top 15 Features')
+    ax.set_title('Top 15 variables más influyentes')
+    ax.tick_params(axis='y', labelsize=9)
 
     plt.tight_layout()
     ruta = os.path.join(OUTPUT_DIR, f'resultados_{horizonte}d.png')
@@ -362,7 +489,7 @@ def predecir_jugadores(df, resultados, top_n=20):
     features = resultado_1d['features']
 
     features_ok = [f for f in features if f in df_hoy.columns]
-    df_pred = df_hoy[features_ok].fillna(0)
+    df_pred = limpiar_X(df_hoy[features_ok].fillna(0))
 
     predicciones = modelo.predict(df_pred)
     df_hoy = df_hoy.copy()

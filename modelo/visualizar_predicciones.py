@@ -15,7 +15,7 @@ HORIZONTE = 7                # 1, 3 o 7 días
 # ─────────────────────────────────────────────
 # CARGA Y MODELO
 # ─────────────────────────────────────────────
-df = cargar_datos("data/raw/DATASET_MAESTRO_TFG.csv")
+df = cargar_datos("data/raw/DATASET_MAESTRO_TFG_corregido.csv")
 df = crear_features(df)
 
 modelo, res = entrenar_modelo(
