@@ -10,7 +10,7 @@ from modelo_tfg import cargar_datos, crear_features, entrenar_modelo
 PLAYER_NAME = "Fermín"     # ← CAMBIA AQUÍ EL JUGADOR
 FECHA_INICIO = "2025-10-01"  # ← CAMBIA AQUÍ
 FECHA_FIN    = "2025-12-20"  # ← CAMBIA AQUÍ
-HORIZONTE = 7                # 1, 3 o 7 días
+HORIZONTE = 3                # 1, 3 o 7 días
 
 # ─────────────────────────────────────────────
 # CARGA Y MODELO
@@ -32,13 +32,13 @@ y_pred = res['y_pred']
 df_test['pred_xgb'] = y_pred
 
 # ─────────────────────────────────────────────
-# BASELINE NAIVE (lag-1)
+# BASELINE NAIVE (lag-h)
 # ─────────────────────────────────────────────
 df_full = df.sort_values(['player_id', 'date'])
-df_full['var_ayer'] = df_full.groupby('player_id')['marketValue'].diff(1)
+df_full['var_naive'] = df_full.groupby('player_id')['marketValue'].diff(HORIZONTE)
 
 df_test = df_test.merge(
-    df_full[['player_id', 'date', 'var_ayer']],
+    df_full[['player_id', 'date', 'var_naive']],
     on=['player_id', 'date'],
     how='left'
 )
@@ -80,8 +80,8 @@ plt.plot(df_plot['date'], df_plot[target_col],
 plt.plot(df_plot['date'], df_plot['pred_xgb'],
          label="XGBoost", linestyle='--')
 
-plt.plot(df_plot['date'], df_plot['var_ayer'],
-         label="Naive (lag-1)", linestyle=':')
+plt.plot(df_plot['date'], df_plot['var_naive'],
+         label=f"Naive (lag-{HORIZONTE})", linestyle=':')
 
 plt.title(f"Predicción vs Real — {PLAYER_NAME} ({HORIZONTE}d)", fontsize=14)
 plt.xlabel("Fecha")
@@ -96,7 +96,7 @@ plt.show()
 # 📊 EXTRA: ERROR ACUMULADO
 # ─────────────────────────────────────────────
 df_plot['error_xgb'] = abs(df_plot[target_col] - df_plot['pred_xgb'])
-df_plot['error_naive'] = abs(df_plot[target_col] - df_plot['var_ayer'])
+df_plot['error_naive'] = abs(df_plot[target_col] - df_plot['var_naive'])
 
 plt.figure(figsize=(12, 4))
 

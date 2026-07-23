@@ -309,6 +309,8 @@ def entrenar_modelo(
     # PRIORIDAD DE SPLITS
     # =========================
 
+    val_mask = None
+
     # 1. Split manual (máxima prioridad)
     if train_mask is not None and test_mask is not None:
         train_mask = train_mask.reindex(df_modelo.index, fill_value=False)
@@ -345,12 +347,16 @@ def entrenar_modelo(
     X_test  = X[test_mask]
     y_train = y[train_mask]
     y_test  = y[test_mask]
-    X_val = X[val_mask] if val_mask is not None else X_test
-    y_val = y[val_mask] if val_mask is not None else y_test
+
     X_train = limpiar_X(X_train)
     X_test  = limpiar_X(X_test)
+
     if val_mask is not None:
-        X_val = limpiar_X(X_val)
+        X_val = limpiar_X(X[val_mask])
+        y_val = y[val_mask]
+    else:
+        X_val = X_test
+        y_val = y_test
 
     # ⚠️ CHECK CLAVE (te evita bugs silenciosos)
     if len(X_test) == 0:
@@ -428,12 +434,11 @@ def entrenar_modelo(
 # 5. GRÁFICOS
 # ─────────────────────────────────────────────
 def guardar_graficos(y_test, y_pred, importancia, horizonte, mae, mae_pct, r2):
-    fig, axes = plt.subplots(1, 3, figsize=(18, 5))
-    fig.suptitle(f'Modelo XGBoost — Horizonte {horizonte} día(s)\nMAE: {mae:,.0f}€ ({mae_pct:.2f}%)  |  R²: {r2:.4f}',
-                 fontsize=13, fontweight='bold')
+    titulo_base = f'Modelo XGBoost — Horizonte {horizonte} día(s)\nMAE: {mae:,.0f}€ ({mae_pct:.2f}%)  |  R²: {r2:.4f}'
 
-    # 1. Real vs Predicho
-    ax = axes[0]
+    # --- Gráfico 1: Real vs Predicho ---
+    fig, ax = plt.subplots(figsize=(7, 6))
+    fig.suptitle(titulo_base, fontsize=12, fontweight='bold')
     lim = max(abs(y_test.max()), abs(y_test.min())) * 1.1
     ax.scatter(y_test, y_pred, alpha=0.3, s=5, color='steelblue')
     ax.plot([-lim, lim], [-lim, lim], 'r--', lw=1.5, label='Predicción perfecta')
@@ -443,31 +448,40 @@ def guardar_graficos(y_test, y_pred, importancia, horizonte, mae, mae_pct, r2):
     ax.legend()
     ax.set_xlim(-lim, lim)
     ax.set_ylim(-lim, lim)
+    plt.tight_layout()
+    ruta1 = os.path.join(OUTPUT_DIR, f'dispersión_{horizonte}d.png')
+    plt.savefig(ruta1, dpi=150, bbox_inches='tight')
+    plt.close()
+    print(f"    Gráfico guardado: {ruta1}")
 
-    # 2. Distribución de errores
-    ax = axes[1]
+    # --- Gráfico 2: Distribución del error ---
+    fig, ax = plt.subplots(figsize=(7, 6))
+    fig.suptitle(titulo_base, fontsize=12, fontweight='bold')
     errores = y_pred - y_test.values
     ax.hist(errores, bins=60, color='steelblue', edgecolor='white', alpha=0.8)
     ax.axvline(0, color='red', lw=1.5, linestyle='--')
     ax.set_xlabel('Error (€)')
     ax.set_ylabel('Frecuencia')
     ax.set_title('Distribución del Error')
+    plt.tight_layout()
+    ruta2 = os.path.join(OUTPUT_DIR, f'error_{horizonte}d.png')
+    plt.savefig(ruta2, dpi=150, bbox_inches='tight')
+    plt.close()
+    print(f"    Gráfico guardado: {ruta2}")
 
-    # 3. Top 15 features
-    ax = axes[2]
+    # --- Gráfico 3: Importancia de variables ---
+    fig, ax = plt.subplots(figsize=(9, 6))
     top15 = importancia.head(15).copy()
     top15['label'] = top15['feature'].map(ETIQUETAS_FEATURES).fillna(top15['feature'])
     ax.barh(top15['label'][::-1], top15['importancia'][::-1], color='steelblue')
     ax.set_xlabel('Importancia')
-    ax.set_title('Top 15 variables más influyentes')
+    ax.set_title(f'Top 15 variables más influyentes — Horizonte {horizonte} día(s)')
     ax.tick_params(axis='y', labelsize=9)
-
     plt.tight_layout()
-    ruta = os.path.join(OUTPUT_DIR, f'resultados_{horizonte}d.png')
-    plt.savefig(ruta, dpi=150, bbox_inches='tight')
+    ruta3 = os.path.join(OUTPUT_DIR, f'importancia_{horizonte}d.png')
+    plt.savefig(ruta3, dpi=150, bbox_inches='tight')
     plt.close()
-    print(f"    Gráfico guardado: {ruta}")
-
+    print(f"    Gráfico guardado: {ruta3}")
 
 # ─────────────────────────────────────────────
 # 6. PREDICCIÓN DE JUGADORES ESPECÍFICOS
